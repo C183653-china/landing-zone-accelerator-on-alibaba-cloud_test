@@ -139,7 +139,7 @@ Component 可以认为是更高维度的 Module，开发方式和 Terraform Modu
 ### 使用方式
 引用 Components 进行部署：
 
-``hcl
+```hcl
 module "folders" {
   source = "./components/resource-structure/folders"
 
