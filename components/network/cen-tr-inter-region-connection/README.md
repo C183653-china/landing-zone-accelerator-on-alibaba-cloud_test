@@ -20,14 +20,14 @@ This component creates an inter-region connection (peer attachment) between two 
 | Name | Version |
 |------|---------|
 | terraform | >= 1.2 |
-| alicloud | >= 1.267.0 |
+| alicloud | ~> 1.267 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| alicloud.cen_tr | >= 1.267.0 |
-| alicloud.cen_peer_tr | >= 1.267.0 |
+| alicloud.cen_tr | ~> 1.267 |
+| alicloud.cen_peer_tr | ~> 1.267 |
 
 This component expects the `alicloud` provider to expose the following **configuration aliases** (see `versions.tf` and stack-level provider config):
 

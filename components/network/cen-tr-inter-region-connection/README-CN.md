@@ -20,14 +20,14 @@
 | Name | Version |
 |------|---------|
 | terraform | >= 1.2 |
-| alicloud | >= 1.267.0 |
+| alicloud | ~> 1.267 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| alicloud.cen_tr | >= 1.267.0 |
-| alicloud.cen_peer_tr | >= 1.267.0 |
+| alicloud.cen_tr | ~> 1.267 |
+| alicloud.cen_peer_tr | ~> 1.267 |
 
 该组件期望 `alicloud` provider 暴露以下**配置别名**（参见 `versions.tf` 和 stack 级别的 provider 配置）：
 

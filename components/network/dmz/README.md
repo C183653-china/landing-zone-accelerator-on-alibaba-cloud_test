@@ -22,15 +22,15 @@ This component creates and manages a DMZ (Demilitarized Zone) VPC for secure out
 | Name | Version |
 |------|---------|
 | terraform | >= 1.2 |
-| alicloud | >= 1.267.0 |
+| alicloud | ~> 1.267 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| alicloud | >= 1.267.0 |
-| alicloud.cen_tr | >= 1.267.0 |
-| alicloud.dmz | >= 1.267.0 |
+| alicloud | ~> 1.267 |
+| alicloud.cen_tr | ~> 1.267 |
+| alicloud.dmz | ~> 1.267 |
 
 ## Modules
 

@@ -23,14 +23,14 @@
 | Name | Version |
 |------|---------|
 | terraform | >= 1.2 |
-| alicloud | >= 1.267.0 |
+| alicloud | ~> 1.267 |
 | random | >= 3.6.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| alicloud | >= 1.267.0 |
+| alicloud | ~> 1.267 |
 | random | >= 3.6.0 |
 
 ## Modules

@@ -19,13 +19,13 @@ This component creates multiple security groups in a VPC (via `modules/security-
 | Name      | Version   |
 |-----------|-----------|
 | terraform | >= 1.2  |
-| alicloud  | >= 1.267.0 |
+| alicloud  | ~> 1.267 |
 
 ## Providers
 
 | Name          | Version   |
 |---------------|-----------|
-| alicloud       | >= 1.267.0 |
+| alicloud       | ~> 1.267 |
 
 ## Usage Examples
 

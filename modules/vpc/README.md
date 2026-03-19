@@ -22,13 +22,13 @@ This module creates and manages Alibaba Cloud Virtual Private Cloud (VPC) resour
 | Name | Version |
 |------|---------|
 | terraform | >= 1.2 |
-| alicloud | >= 1.267.0 |
+| alicloud | ~> 1.267 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| alicloud | >= 1.267.0 |
+| alicloud | ~> 1.267 |
 
 ## Modules
 

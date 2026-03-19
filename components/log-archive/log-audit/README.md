@@ -38,16 +38,16 @@ This is because Alibaba Cloud SLS Log Audit service currently only supports thes
 | Name | Version |
 |------|---------|
 | terraform | >= 1.2 |
-| alicloud | >= 1.267.0 |
+| alicloud | ~> 1.267 |
 | random | >= 3.1.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| alicloud | >= 1.267.0 |
-| alicloud.log_audit | >= 1.267.0 (region must be `cn-shanghai` or `ap-southeast-1`) |
-| alicloud.sls_project | >= 1.267.0 |
+| alicloud | ~> 1.267 |
+| alicloud.log_audit | ~> 1.267 (region must be `cn-shanghai` or `ap-southeast-1`) |
+| alicloud.sls_project | ~> 1.267 |
 | random | >= 3.1.0 |
 
 ## Modules

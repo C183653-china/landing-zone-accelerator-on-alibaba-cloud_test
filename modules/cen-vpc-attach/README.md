@@ -22,15 +22,15 @@ This module attaches a VPC to an Alibaba Cloud Cloud Enterprise Network (CEN) tr
 | Name | Version |
 |------|---------|
 | terraform | >= 1.2 |
-| alicloud | >= 1.267.0 |
+| alicloud | ~> 1.267 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| alicloud | >= 1.267.0 |
-| alicloud.cen_tr | >= 1.267.0 |
-| alicloud.vpc | >= 1.267.0 |
+| alicloud | ~> 1.267 |
+| alicloud.cen_tr | ~> 1.267 |
+| alicloud.vpc | ~> 1.267 |
 
 ## Modules
 

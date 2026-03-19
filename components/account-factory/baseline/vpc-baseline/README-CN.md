@@ -21,15 +21,15 @@
 | 名称      | 版本      |
 |-----------|-----------|
 | terraform | >= 1.2   |
-| alicloud  | >= 1.267.0 |
+| alicloud  | ~> 1.267 |
 
 ## Providers
 
 | 名称         | 版本      |
 |--------------|-----------|
-| alicloud      | >= 1.267.0 |
-| alicloud.vpc  | >= 1.267.0 |
-| alicloud.cen_tr | >= 1.267.0 |
+| alicloud      | ~> 1.267 |
+| alicloud.vpc  | ~> 1.267 |
+| alicloud.cen_tr | ~> 1.267 |
 
 该组件要求 `alicloud` provider 暴露以下 **configuration aliases**（见 `versions.tf` 以及 stack 级 provider 配置）：
 
