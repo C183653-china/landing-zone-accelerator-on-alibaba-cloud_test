@@ -83,6 +83,7 @@ Component can be considered a higher-dimensional Module, developed in the same w
 - **Log Archive**
   - `actiontrail`: ActionTrail log delivery to OSS/SLS
   - `config`: Config Audit log delivery to OSS/SLS
+  - `event-alert`: ActionTrail event alert policy configuration
   - `log-audit`: Log audit policy configuration
 
 ## Main Functional Modules
@@ -130,6 +131,7 @@ Component can be considered a higher-dimensional Module, developed in the same w
 
 - ActionTrail log delivery (OSS/SLS)
 - Config Audit log delivery (OSS/SLS)
+- ActionTrail event alert policy configuration
 - Log audit policy configuration
 
 ## Usage

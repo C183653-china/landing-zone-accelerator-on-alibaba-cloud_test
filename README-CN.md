@@ -83,6 +83,7 @@ Component 可以认为是更高维度的 Module，开发方式和 Terraform Modu
 - **日志归档 (Log Archive)**
   - `actiontrail`：操作审计日志投递到 OSS/SLS
   - `config`：配置审计日志投递到 OSS/SLS
+  - `event-alert`：操作审计事件告警策略配置
   - `log-audit`：日志审计策略配置
 
 ## 主要功能模块
@@ -130,6 +131,7 @@ Component 可以认为是更高维度的 Module，开发方式和 Terraform Modu
 
 - 操作审计日志投递（OSS/SLS）
 - 配置审计日志投递（OSS/SLS）
+- 操作审计事件告警策略配置
 - 日志审计策略配置
 
 ## 使用方法
