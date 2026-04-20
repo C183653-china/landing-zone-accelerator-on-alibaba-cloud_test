@@ -35,9 +35,10 @@ on:
   workflow_dispatch:
 
 # 同一 PR 只保留最近一次运行，避免评论刷屏
+# 1. 修复并发配置：手动触发时使用唯一 ID，永远不会互相取消
 concurrency:
-  group: tf-graph-${{ github.event.pull_request.number || github.event.issue.number || 'manual' }}
-  cancel-in-progress: true
+  group: tf-graph-${{ github.event.pull_request.number || github.event.issue.number || format('manual-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
@@ -160,7 +161,7 @@ jobs:
           curl -sL "https://github.com/pcasteran/terraform-graph-beautifier/releases/download/v0.3.4/terraform-graph-beautifier_0.3.4_linux_amd64.tar.gz" | tar xz
           chmod +x terraform-graph-beautifier
 
-      # --- 核心：遍历所有模块目录 ---
+      # --- 核心：扫描模块并生成依赖图 ---
       - name: 扫描并生成依赖图
         id: gen
         env:
@@ -191,11 +192,12 @@ jobs:
               continue
             fi
 
-            cd "$GITHUB_WORKSPACE/$dir"
+            cd "$GITHUB_WORKSPACE/$dir" || { echo "无法进入 $dir"; cd "$GITHUB_WORKSPACE"; continue; }
 
             # ---- terraform init：只下载 provider schema，不连接 backend ----
             if ! terraform init -backend=false -no-color 2>&1 | tail -1; then
-              echo "  跳过（terraform init 失败）"
+              echo "  跳过"
+              rm -rf "$GITHUB_WORKSPACE/$dir/.terraform" # 即使失败也清理，防占空间
               cd "$GITHUB_WORKSPACE"
               SKIP=$((SKIP + 1))
               continue
@@ -219,11 +221,16 @@ jobs:
                 2>/dev/null || true
               rm -f "output/${SAFE}.clean.dot"
 
+              # ★ 关键修复：每次处理完一个模块，立刻删掉下载的 Provider 插件包！
+              # 这能省出大约 7GB 的磁盘空间，防止最后 upload-artifact 时磁盘爆满。
+              rm -rf "$GITHUB_WORKSPACE/$dir/.terraform"
+
               GRAPH_LIST="${GRAPH_LIST}|${dir}"
               OK=$((OK + 1))
               echo "  ✓ 成功"
             else
               cd "$GITHUB_WORKSPACE"
+              rm -rf "$GITHUB_WORKSPACE/$dir/.terraform" # 失败也要清理
               SKIP=$((SKIP + 1))
               echo "  跳过（terraform graph 失败）"
             fi
@@ -235,7 +242,12 @@ jobs:
           echo "graphs=${GRAPH_LIST}" >> "$GITHUB_OUTPUT"
           echo "::notice::成功 ${OK} 个模块，跳过 ${SKIP} 个"
 
-      # --- 上传所有生成产物 ---
+      # ★ 新增：上传前强制列一下文件，作为“铁证”
+      - name: 确认产物列表
+        run: |
+          echo "准备上传的文件："
+          ls -lh output/ || echo "警告：output 目录确实为空！"
+
       - name: 上传 Artifact
         uses: actions/upload-artifact@v4
         with:
