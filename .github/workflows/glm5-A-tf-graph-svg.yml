@@ -1,0 +1,42 @@
+# .github/workflows/glm5-A-tf-graph-svg.yml
+# Phase A: 生成 SVG，下载看图
+# 适合：只想快速看图，不想折腾 GitHub Pages。
+# from <https://chatglm.cn/main/alltoolsdetail?t=1776670590003&cid=69e48e101f7d5274fe66ed19&lang=zh>
+name: GLM5 - Terraform Dependency Graph SVG
+
+on:
+  pull_request:
+    paths: ['**/*.tf']
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  graph:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.7.x'
+
+      - name: Terraform init (不连接 backend)
+        run: terraform init -backend=false
+
+      - name: 生成 DOT 文件
+        run: terraform graph > graph.dot
+
+      - name: 渲染为 SVG
+        run: dot -Tsvg graph.dot > graph.svg
+
+      - name: 渲染为 PNG（备用）
+        run: dot -Tpng -Gdpi=150 graph.dot > graph.png
+
+      - name: 上传为 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-graph
+          path: |
+            graph.dot
+            graph.svg
+            graph.png
+          retention-days: 30

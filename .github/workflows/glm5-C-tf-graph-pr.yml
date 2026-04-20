@@ -1,0 +1,137 @@
+# .github/workflows/glm5-C-tf-graph-pr.yml
+# Phase C: 多目录 Landing Zone + PR 评论
+# 效果：每次提 PR，自动在评论区展示每个模块的依赖图 SVG 预览，点开就能看，同时提供 HTML 下载链接。
+# from <https://chatglm.cn/main/alltoolsdetail?t=1776670590003&cid=69e48e101f7d5274fe66ed19&lang=zh>
+name: Terraform Dependency Graph PR (Multi-Module)
+
+on:
+  pull_request:
+    paths: ['**/*.tf']
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  graph:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write  # 需要 PR 评论权限
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.7.x'
+
+      - name: 安装 terraform-graph-beautifier
+        run: |
+          curl -sL "https://github.com/pcasteran/terraform-graph-beautifier/releases/download/v0.4.0/terraform-graph-beautifier_0.4.0_linux_amd64.tar.gz" | tar xz
+          chmod +x terraform-graph-beautifier
+
+      # ========== 核心逻辑：遍历所有含 main.tf 的目录 ==========
+      - name: 扫描并生成所有模块的图
+        id: gen
+        run: |
+          mkdir -p output
+          GRAPH_LIST=""
+
+          # 找到所有包含 main.tf 的目录（排除 .terraform 隐藏目录）
+          for dir in $(find . -name "main.tf" -not -path "./.terraform/*" | xargs dirname | sort); do
+            echo "=== 处理模块: $dir ==="
+
+            # 跳过没有 provider 声明的纯模块目录（init 会失败）
+            # 如果目录下没有任何 provider/resource/data 声明则跳过
+            if ! grep -qE '^(resource|data|provider|module)\s' "$dir"/*.tf 2>/dev/null; then
+              echo "    跳过（纯变量/输出模块，无资源声明）"
+              continue
+            fi
+
+            cd "$GITHUB_WORKSPACE/$dir"
+
+            # init（可能失败，比如纯 module 定义目录）
+            if ! terraform init -backend=false -no-color 2>&1; then
+              echo "    跳过（terraform init 失败）"
+              cd "$GITHUB_WORKSPACE"
+              continue
+            fi
+
+            # 生成 DOT
+            if terraform graph -no-color > "$GITHUB_WORKSPACE/output/${dir//\//__}.dot" 2>/dev/null; then
+              # 转交互式 HTML
+              cd "$GITHUB_WORKSPACE"
+              SAFE_NAME="${dir//\//__}"
+              ./terraform-graph-beautifier \
+                --input "output/${SAFE_NAME}.dot" \
+                --output-type cyto-html \
+                --output "output/${SAFE_NAME}.html"
+
+              # 转 SVG
+              dot -Tsvg "output/${SAFE_NAME}.dot" > "output/${SAFE_NAME}.svg"
+
+              GRAPH_LIST="${GRAPH_LIST}|${dir}"
+              echo "    成功: output/${SAFE_NAME}.html"
+            else
+              cd "$GITHUB_WORKSPACE"
+              echo "    跳过（terraform graph 失败）"
+            fi
+          done
+
+          # 去掉开头的 |
+          GRAPH_LIST="${GRAPH_LIST#|}"
+          echo "graphs=${GRAPH_LIST}" >> "$GITHUB_OUTPUT"
+
+      - name: 上传 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-graphs
+          path: output/
+          retention-days: 30
+
+      # ========== 如果是 PR，自动发评论 ==========
+      - name: 在 PR 中发表评论
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const graphs = '${{ steps.gen.outputs.graphs }}';
+            if (!graphs) {
+              console.log('没有生成任何图');
+              return;
+            }
+
+            const dirs = graphs.split('|');
+            let body = '## Terraform 依赖关系图\n\n';
+            body += '代码变更触发了依赖图重新生成。\n\n';
+
+            for (const dir of dirs) {
+              const safe = dir.replace(/\//g, '__');
+              body += `### ${dir}\n\n`;
+              body += `<details>\n<summary>点击展开交互式 HTML 下载</summary>\n\n`;
+              body += `从 [Actions Artifact](../actions/runs/${{ github.run_id }}) 下载 \`terraform-graphs.zip\`，解压后打开 \`${safe}.html\`\n\n`;
+              body += `</details>\n\n`;
+
+              // 嵌入 SVG（如果不太大的话）
+              try {
+                const fs = require('fs');
+                const svg = fs.readFileSync(`output/${safe}.svg`, 'utf8');
+                // SVG 太大就不嵌入了
+                if (svg.length < 500000) {
+                  body += `<details>\n<summary>点击查看 SVG 预览</summary>\n\n`;
+                  body += svg;
+                  body += '\n\n</details>\n\n';
+                } else {
+                  body += `> SVG 过大（${(svg.length/1024).toFixed(0)}KB），请下载查看\n\n`;
+                }
+              } catch(e) {
+                body += '> SVG 生成失败\n\n';
+              }
+            }
+
+            body += '---\n*由 GitHub Actions 自动生成*';
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });

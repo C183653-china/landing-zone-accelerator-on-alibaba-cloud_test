@@ -1,0 +1,76 @@
+# .github/workflows/glm5-B-tf-graph-html.yml
+# Phase B: 交互式 HTML + GitHub Pages 在线看
+# 适合：团队多人查看，不想每次下载文件。
+# 前置条件：仓库 Settings → Pages → Source 选 “GitHub Actions”（只需点一次）
+# from <https://chatglm.cn/main/alltoolsdetail?t=1776670590003&cid=69e48e101f7d5274fe66ed19&lang=zh>
+name: Terraform Dependency Graph HTML
+
+on:
+  push:
+    branches: [main]
+    paths: ['**/*.tf']
+  pull_request:
+    paths: ['**/*.tf']
+  workflow_dispatch:  # 支持手动触发
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: tf-graph-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.7.x'
+
+      - name: Terraform init
+        run: terraform init -backend=false
+
+      - name: 生成 DOT
+        run: terraform graph > graph.dot
+
+      # --- 关键：下载 terraform-graph-beautifier ---
+      - name: 安装 terraform-graph-beautifier
+        run: |
+          # 从 GitHub Releases 下载 Linux amd64 二进制
+          RELEASE_URL="https://github.com/pcasteran/terraform-graph-beautifier/releases/download/v0.4.0/terraform-graph-beautifier_0.4.0_linux_amd64.tar.gz"
+          curl -sL "$RELEASE_URL" | tar xz
+          chmod +x terraform-graph-beautifier
+
+      - name: 生成交互式 HTML
+        run: |
+          # cyto-html 模式：用 Cytoscape.js 渲染，不需要 Graphviz
+          ./terraform-graph-beautifier \
+            --input graph.dot \
+            --output-type cyto-html \
+            --output index.html
+
+      - name: 同时生成 SVG（给离线场景用）
+        run: dot -Tsvg graph.dot > graph.svg
+
+      - name: 上传到 GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: |
+            index.html
+            graph.svg
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: 部署到 GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,362 @@
+# .github/workflows/glm5-D-tf-graph-pr-issue-comment.yml
+# Phase D: 多目录 Landing Zone + PR 评论 + `/graph`命令触发
+# 效果: 在PR，通过在评论区输入命令给, 生成全部/单个模块的依赖图 SVG 预览，点开就能看，同时提供 HTML 下载链接。
+# 命令: /graph network 就只生成 network/ 目录的图，/graph 不带参数则生成全部
+### ---
+# # 场景 1：改了 .tf 代码提 PR
+# # → 自动触发，PR 评论里直接出所有模块的图
+
+# # 场景 2：PR 里没改 .tf，但想重新看图
+# /graph
+
+# # 场景 3：Landing Zone 有 10 个模块，只想看网络层的
+# /graph network
+
+# # 场景 4：只想看计算层
+# /graph compute
+
+# # 场景 5：模块名含大小写也行
+# /Graph DATABASE
+
+# # 场景 6：在 Issue 里输入 /graph
+# # → 静默跳过，不会报错也不会发评论
+
+# # 场景 7：PR 里随便聊天，没写 /graph
+# # → 静默跳过
+### ---
+# from <https://chatglm.cn/main/alltoolsdetail?t=1776670590003&cid=69e48e101f7d5274fe66ed19&lang=zh>
+name: Terraform Dependency Graph PR (issue_comment)(Multi-Module)
+
+on:
+  pull_request:
+    paths: ['**/*.tf']
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+# 同一 PR 只保留最近一次运行，避免评论刷屏
+concurrency:
+  group: tf-graph-${{ github.event.pull_request.number || github.event.issue.number || 'manual' }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+jobs:
+  # ═══════════════════════════════════════
+  #  第一关：判断是否需要执行
+  # ═══════════════════════════════════════
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run:   ${{ steps.check.outputs.should_run }}
+      pr_number:    ${{ steps.check.outputs.pr_number }}
+      is_comment:   ${{ steps.check.outputs.is_comment }}
+      filter:       ${{ steps.check.outputs.filter }}
+      trigger_text: ${{ steps.check.outputs.trigger_text }}
+    steps:
+      - id: check
+        env:
+          GH_EVENT:     ${{ github.event_name }}
+          GH_ACTOR:     ${{ github.actor }}
+          GH_IS_PR:     ${{ github.event.issue.pull_request != '' && 'true' || 'false' }}
+          GH_COMMENT:   ${{ github.event.comment.body || '' }}
+          GH_PR_NUM:    ${{ github.event.pull_request.number || '' }}
+          GH_ISSUE_NUM: ${{ github.event.issue.number || '' }}
+        run: |
+          SHOULD_RUN="false"
+          PR_NUMBER=""
+          IS_COMMENT="false"
+          FILTER=""
+          TRIGGER_TEXT=""
+
+          case "$GH_EVENT" in
+            pull_request)
+              SHOULD_RUN="true"
+              PR_NUMBER="$GH_PR_NUM"
+              TRIGGER_TEXT="自动触发（.tf 文件变更）"
+              ;;
+
+            issue_comment)
+              # 1) 不是 PR → 跳过（Issue 评论不触发）
+              if [ "$GH_IS_PR" != "true" ]; then
+                echo "::notice::不是 PR 评论，跳过"
+
+              # 2) 是 bot 自己的评论 → 跳过（防无限循环）
+              elif [ "$GH_ACTOR" = "github-actions[bot]" ]; then
+                echo "::notice::bot 评论，跳过（防循环）"
+
+              else
+                FIRST_LINE=$(echo "$GH_COMMENT" | head -1)
+
+                # 3) 是否以 /graph 开头（大小写不敏感）
+                if echo "$FIRST_LINE" | grep -qiE '^/graph(\s|$)'; then
+                  SHOULD_RUN="true"
+                  PR_NUMBER="$GH_ISSUE_NUM"
+                  IS_COMMENT="true"
+
+                  # 提取过滤参数：/graph network → FILTER=network
+                  # /graph → FILTER=""
+                  # /GRAPH  VPC  → FILTER=VPC
+                  FILTER=$(echo "$FIRST_LINE" \
+                    | awk 'tolower($0) ~ /^\/graph/ { for(i=2; i<=NF; i++) { print $i; exit } }')
+
+                  if [ -n "$FILTER" ]; then
+                    TRIGGER_TEXT="/graph ${FILTER}"
+                  else
+                    TRIGGER_TEXT="/graph"
+                  fi
+                else
+                  echo "::notice::未找到 /graph 命令"
+                fi
+              fi
+              ;;
+
+            workflow_dispatch)
+              SHOULD_RUN="true"
+              TRIGGER_TEXT="手动触发"
+              ;;
+          esac
+
+          echo "should_run=${SHOULD_RUN}"   >> "$GITHUB_OUTPUT"
+          echo "pr_number=${PR_NUMBER}"     >> "$GITHUB_OUTPUT"
+          echo "is_comment=${IS_COMMENT}"   >> "$GITHUB_OUTPUT"
+          echo "filter=${FILTER}"           >> "$GITHUB_OUTPUT"
+          echo "trigger_text=${TRIGGER_TEXT}" >> "$GITHUB_OUTPUT"
+
+  # ═══════════════════════════════════════
+  #  第二关：扫描模块、生成依赖图
+  # ═══════════════════════════════════════
+  graph:
+    needs: gate
+    if: needs.gate.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      graphs: ${{ steps.gen.outputs.graphs }}
+    steps:
+      # --- Checkout：评论触发时必须切到 PR head ---
+      - name: Checkout PR head（评论触发时）
+        if: needs.gate.outputs.is_comment == 'true'
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ needs.gate.outputs.pr_number }}/head
+
+      - name: Checkout 默认分支（PR / 手动触发时）
+        if: needs.gate.outputs.is_comment != 'true'
+        uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.7.x'
+
+      # --- 安装 terraform-graph-beautifier ---
+      # ⚠️ 版本号 v0.3.4 请到下方链接确认是否为最新：
+      #    https://github.com/pcasteran/terraform-graph-beautifier/releases
+      #    如果版本号变了，改下面两处 0.3.4 即可
+      - name: 安装 terraform-graph-beautifier
+        run: |
+          curl -sL \
+            "https://github.com/pcasteran/terraform-graph-beautifier/releases/download/v0.3.4/terraform-graph-beautifier_0.3.4_linux_amd64.tar.gz" \
+            | tar xz
+          chmod +x terraform-graph-beautifier
+
+      # --- 核心：遍历所有模块目录 ---
+      - name: 扫描并生成依赖图
+        id: gen
+        env:
+          FILTER: ${{ needs.gate.outputs.filter }}
+        run: |
+          mkdir -p output
+          GRAPH_LIST=""
+          OK=0
+          SKIP=0
+
+          # 找到所有包含 main.tf 的目录（排除 .terraform 缓存目录）
+          while IFS= read -r dir; do
+            echo "=== ${dir} ==="
+
+            # ---- 过滤参数匹配 ----
+            # /graph network → 只处理路径包含 "network" 的目录
+            # /graph         → 处理所有目录
+            if [ -n "$FILTER" ] && ! echo "$dir" | grep -qi "$FILTER"; then
+              echo "  跳过（不匹配过滤条件: ${FILTER}）"
+              SKIP=$((SKIP + 1))
+              continue
+            fi
+
+            # ---- 跳过纯模块定义目录（无实际资源声明）----
+            if ! grep -qE '^(resource|data|provider)\s' "$dir"/*.tf 2>/dev/null; then
+              echo "  跳过（无资源声明，纯变量/输出模块）"
+              SKIP=$((SKIP + 1))
+              continue
+            fi
+
+            cd "$GITHUB_WORKSPACE/$dir"
+
+            # ---- terraform init：只下载 provider schema，不连接 backend ----
+            if ! terraform init -backend=false -no-color 2>&1 | tail -1; then
+              echo "  跳过（terraform init 失败）"
+              cd "$GITHUB_WORKSPACE"
+              SKIP=$((SKIP + 1))
+              continue
+            fi
+
+            # ---- terraform graph：输出 DOT 格式依赖图 ----
+            if terraform graph -no-color > "$GITHUB_WORKSPACE/output/${dir//\//__}.dot" 2>/dev/null; then
+              cd "$GITHUB_WORKSPACE"
+              SAFE="${dir//\//__}"   # ./modules/network → .__modules__network
+
+              # 生成交互式 HTML（Cytoscape.js，不需要 Graphviz）
+              ./terraform-graph-beautifier \
+                --input "output/${SAFE}.dot" \
+                --output-type=cyto-html \
+                --output "output/${SAFE}.html"
+
+              # 生成 SVG（GitHub Ubuntu runner 自带 dot 命令）
+              dot -Tsvg "output/${SAFE}.dot" > "output/${SAFE}.svg" 2>/dev/null || true
+
+              GRAPH_LIST="${GRAPH_LIST}|${dir}"
+              OK=$((OK + 1))
+              echo "  ✓ 成功"
+            else
+              cd "$GITHUB_WORKSPACE"
+              SKIP=$((SKIP + 1))
+              echo "  跳过（terraform graph 失败）"
+            fi
+
+          done < <(find . -name "main.tf" -not -path "./.terraform/*" | xargs dirname | sort)
+
+          # 去掉开头的分隔符
+          GRAPH_LIST="${GRAPH_LIST#|}"
+          echo "graphs=${GRAPH_LIST}" >> "$GITHUB_OUTPUT"
+          echo "::notice::成功 ${OK} 个模块，跳过 ${SKIP} 个"
+
+      # --- 上传所有生成产物 ---
+      - name: 上传 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-graphs-${{ github.run_id }}
+          path: output/
+          retention-days: 30
+
+  # ═══════════════════════════════════════
+  #  第三关：在 PR 中发表评论
+  # ═══════════════════════════════════════
+  comment:
+    needs: [gate, graph]
+    if: needs.gate.outputs.pr_number != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: 下载生成结果
+        uses: actions/download-artifact@v4
+        with:
+          name: tf-graphs-${{ github.run_id }}
+          path: output/
+
+      # --- 在 JS 中构建评论内容，避免多行 HTML 经过 outputs 传递出问题 ---
+      - name: 发表 PR 评论
+        uses: actions/github-script@v7
+        env:
+          GRAPHS:       ${{ needs.graph.outputs.graphs }}
+          TRIGGER_TEXT: ${{ needs.gate.outputs.trigger_text }}
+          FILTER:       ${{ needs.gate.outputs.filter }}
+        with:
+          script: |
+            const fs   = require('fs');
+            const path = require('path');
+
+            const graphsRaw  = process.env.GRAPHS       || '';
+            const triggerTxt = process.env.TRIGGER_TEXT  || '';
+            const filter     = process.env.FILTER        || '';
+            const runId      = '${{ github.run_id }}';
+            const prNum      = parseInt('${{ needs.gate.outputs.pr_number }}');
+
+            // ── 构建评论头部 ──
+            let body = '## Terraform 依赖关系图\n\n';
+
+            if (triggerTxt) {
+              body += '> 由 `' + triggerTxt + '` 触发\n\n';
+            }
+            if (filter) {
+              body += '> 过滤条件: `' + filter + '`\n\n';
+            }
+
+            // ── 没有生成任何模块的情况 ──
+            if (!graphsRaw) {
+              body += '未检测到可生成的模块。\n';
+              if (filter) {
+                body += '\n> 可能原因：\n';
+                body += '> - 目录名拼写有误（当前过滤: `' + filter + '`）\n';
+                body += '> - 该目录下没有 `main.tf`\n';
+                body += '> - 该目录下没有 resource/data/provider 声明\n';
+                body += '> - `terraform init` 或 `terraform graph` 失败\n\n';
+                body += '尝试不带参数的 `/graph` 查看全部模块。\n';
+              }
+              body += '\n---\n*GitHub Actions · 使用 `/graph` 重新生成*';
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNum,
+                body: body
+              });
+              return;
+            }
+
+            // ── 正常情况：逐模块生成评论 ──
+            const dirs = graphsRaw.split('|');
+            body += '共 **' + dirs.length + '** 个模块：\n\n';
+
+            for (const dir of dirs) {
+              const safe = dir.replace(/\//g, '__');
+
+              // 模块标题
+              body += '### `' + dir + '`\n\n';
+
+              // 尝试嵌入 SVG 预览
+              const svgPath = path.join('output', safe + '.svg');
+              let svgOk = false;
+              try {
+                if (fs.existsSync(svgPath)) {
+                  const svg = fs.readFileSync(svgPath, 'utf8').trim();
+                  if (svg.length > 0 && svg.length < 500000) {
+                    body += '<details><summary>点击展开 SVG 预览</summary>\n\n';
+                    body += svg;
+                    body += '\n\n</details>\n\n';
+                    svgOk = true;
+                  } else if (svg.length >= 500000) {
+                    const sizeKb = Math.round(svg.length / 1024);
+                    body += '> SVG 过大（' + sizeKb + 'KB），请下载 HTML 查看\n\n';
+                    svgOk = true;
+                  }
+                }
+              } catch (e) { /* ignore read error */ }
+
+              if (!svgOk) {
+                body += '> SVG 未生成\n\n';
+              }
+
+              // HTML 下载指引（交互式版本，支持拖拽/缩放/搜索）
+              body += '<details><summary>交互式 HTML（拖拽 / 缩放 / 搜索）</summary>\n\n';
+              body += '从 [Actions 运行记录](../actions/runs/' + runId + ') ';
+              body += '下载 `tf-graphs-' + runId + '`，解压后打开 `' + safe + '.html`\n\n';
+              body += '</details>\n\n';
+            }
+
+            // 底部提示
+            body += '---\n';
+            body += '*GitHub Actions 自动生成';
+            body += ' · `/graph` 重新生成全部';
+            body += ' · `/graph 目录名` 只看指定模块*\n';
+
+            // 发送评论
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNum,
+              body: body
+            });
