@@ -2,7 +2,7 @@
 # Phase A: 生成 SVG，下载看图
 # 适合：只想快速看图，不想折腾 GitHub Pages。
 # from <https://chatglm.cn/main/alltoolsdetail?t=1776670590003&cid=69e48e101f7d5274fe66ed19&lang=zh>
-name: GLM5 - Terraform Dependency Graph SVG
+name: GLM5 -A- Terraform Dependency Graph SVG
 
 on:
   pull_request:

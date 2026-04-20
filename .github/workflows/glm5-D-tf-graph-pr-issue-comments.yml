@@ -25,7 +25,7 @@
 # # → 静默跳过
 ### ---
 # from <https://chatglm.cn/main/alltoolsdetail?t=1776670590003&cid=69e48e101f7d5274fe66ed19&lang=zh>
-name: Terraform Dependency Graph PR (issue_comment)(Multi-Module)
+name: GLM5 -D- Terraform Dependency Graph PR (issue_comment)(Multi-Module)
 
 on:
   pull_request:
@@ -120,10 +120,10 @@ jobs:
               ;;
           esac
 
-          echo "should_run=${SHOULD_RUN}"   >> "$GITHUB_OUTPUT"
-          echo "pr_number=${PR_NUMBER}"     >> "$GITHUB_OUTPUT"
-          echo "is_comment=${IS_COMMENT}"   >> "$GITHUB_OUTPUT"
-          echo "filter=${FILTER}"           >> "$GITHUB_OUTPUT"
+          echo "should_run=${SHOULD_RUN}"     >> "$GITHUB_OUTPUT"
+          echo "pr_number=${PR_NUMBER}"       >> "$GITHUB_OUTPUT"
+          echo "is_comment=${IS_COMMENT}"     >> "$GITHUB_OUTPUT"
+          echo "filter=${FILTER}"             >> "$GITHUB_OUTPUT"
           echo "trigger_text=${TRIGGER_TEXT}" >> "$GITHUB_OUTPUT"
 
   # ═══════════════════════════════════════
@@ -151,15 +151,13 @@ jobs:
         with:
           terraform_version: '1.7.x'
 
-      # --- 安装 terraform-graph-beautifier ---
+      # --- 安装 terraform-graph-beautifier（v0.3.4，确认存在）---
       # ⚠️ 版本号 v0.3.4 请到下方链接确认是否为最新：
       #    https://github.com/pcasteran/terraform-graph-beautifier/releases
       #    如果版本号变了，改下面两处 0.3.4 即可
       - name: 安装 terraform-graph-beautifier
         run: |
-          curl -sL \
-            "https://github.com/pcasteran/terraform-graph-beautifier/releases/download/v0.3.4/terraform-graph-beautifier_0.3.4_linux_amd64.tar.gz" \
-            | tar xz
+          curl -sL "https://github.com/pcasteran/terraform-graph-beautifier/releases/download/v0.3.4/terraform-graph-beautifier_0.3.4_linux_amd64.tar.gz" | tar xz
           chmod +x terraform-graph-beautifier
 
       # --- 核心：遍历所有模块目录 ---
@@ -206,7 +204,7 @@ jobs:
             # ---- terraform graph：输出 DOT 格式依赖图 ----
             if terraform graph -no-color > "$GITHUB_WORKSPACE/output/${dir//\//__}.dot" 2>/dev/null; then
               cd "$GITHUB_WORKSPACE"
-              SAFE="${dir//\//__}"   # ./modules/network → .__modules__network
+              SAFE="${dir//\//__}"
 
               # 生成交互式 HTML（Cytoscape.js，不需要 Graphviz）
               ./terraform-graph-beautifier \

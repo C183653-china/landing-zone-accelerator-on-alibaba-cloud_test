@@ -3,7 +3,7 @@
 # 适合：团队多人查看，不想每次下载文件。
 # 前置条件：仓库 Settings → Pages → Source 选 “GitHub Actions”（只需点一次）
 # from <https://chatglm.cn/main/alltoolsdetail?t=1776670590003&cid=69e48e101f7d5274fe66ed19&lang=zh>
-name: Terraform Dependency Graph HTML
+name: GLM5 -B- Terraform Dependency Graph HTML
 
 on:
   push:
@@ -42,7 +42,7 @@ jobs:
       - name: 安装 terraform-graph-beautifier
         run: |
           # 从 GitHub Releases 下载 Linux amd64 二进制
-          RELEASE_URL="https://github.com/pcasteran/terraform-graph-beautifier/releases/download/v0.4.0/terraform-graph-beautifier_0.4.0_linux_amd64.tar.gz"
+          RELEASE_URL="https://github.com/pcasteran/terraform-graph-beautifier/releases/download/v0.3.4/terraform-graph-beautifier_0.3.4_linux_amd64.tar.gz"
           curl -sL "$RELEASE_URL" | tar xz
           chmod +x terraform-graph-beautifier
 
