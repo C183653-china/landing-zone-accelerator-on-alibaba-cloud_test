@@ -167,12 +167,12 @@ jobs:
         env:
           FILTER: ${{ needs.gate.outputs.filter }}
         run: |
+          set -e  # 任何未处理的错误直接中断，变成红线
           mkdir -p output
           GRAPH_LIST=""
           OK=0
           SKIP=0
 
-          # 找到所有包含 main.tf 的目录（排除 .terraform 缓存目录）
           while IFS= read -r dir; do
             echo "=== ${dir} ==="
 
@@ -197,7 +197,7 @@ jobs:
             # ---- terraform init：只下载 provider schema，不连接 backend ----
             if ! terraform init -backend=false -no-color 2>&1 | tail -1; then
               echo "  跳过"
-              rm -rf "$GITHUB_WORKSPACE/$dir/.terraform" # 即使失败也清理，防占空间
+              rm -rf "$GITHUB_WORKSPACE/$dir/.terraform"
               cd "$GITHUB_WORKSPACE"
               SKIP=$((SKIP + 1))
               continue
@@ -221,8 +221,7 @@ jobs:
                 2>/dev/null || true
               rm -f "output/${SAFE}.clean.dot"
 
-              # ★ 关键修复：每次处理完一个模块，立刻删掉下载的 Provider 插件包！
-              # 这能省出大约 7GB 的磁盘空间，防止最后 upload-artifact 时磁盘爆满。
+              # 每次处理完立刻删掉 Provider 插件包，防磁盘爆满
               rm -rf "$GITHUB_WORKSPACE/$dir/.terraform"
 
               GRAPH_LIST="${GRAPH_LIST}|${dir}"
@@ -230,23 +229,36 @@ jobs:
               echo "  ✓ 成功"
             else
               cd "$GITHUB_WORKSPACE"
-              rm -rf "$GITHUB_WORKSPACE/$dir/.terraform" # 失败也要清理
+              rm -rf "$GITHUB_WORKSPACE/$dir/.terraform"
               SKIP=$((SKIP + 1))
               echo "  跳过（terraform graph 失败）"
             fi
 
           done < <(find . -name "main.tf" -not -path "./.terraform/*" | xargs dirname | sort)
 
-          # 去掉开头的分隔符
           GRAPH_LIST="${GRAPH_LIST#|}"
           echo "graphs=${GRAPH_LIST}" >> "$GITHUB_OUTPUT"
-          echo "::notice::成功 ${OK} 个模块，跳过 ${SKIP} 个"
+          
+          # ★ 核心兜底：如果 OK 是 0，强制报错变红线，彻底杜绝“幽灵成功提示”
+          if [ "$OK" -eq 0 ]; then
+            echo "::error::一个模块都没成功！跳过了 ${SKIP} 个。"
+            exit 1
+          fi
 
-      # ★ 新增：上传前强制列一下文件，作为“铁证”
-      - name: 确认产物列表
+      # upload-artifact 前面加一个调试步骤
+      # 这样就能确认：
+        # 当前目录到底在哪
+        # output/ 是否存在
+        # 文件到底生成到了哪里
+      - name: Debug workspace
         run: |
-          echo "准备上传的文件："
-          ls -lh output/ || echo "警告：output 目录确实为空！"
+          echo "PWD=$(pwd)"
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          ls -la
+          echo "---- find files ----"
+          find . -maxdepth 4 -type f | sort
+          echo "---- output dir ----"
+          ls -la output || true
 
       - name: 上传 Artifact
         uses: actions/upload-artifact@v4
@@ -254,6 +266,7 @@ jobs:
           name: tf-graphs-${{ github.run_id }}
           path: output/
           retention-days: 30
+          if-no-files-found: error # 找不到文件也直接报错变红线
 
   # ═══════════════════════════════════════
   #  第三关：在 PR 中发表评论
