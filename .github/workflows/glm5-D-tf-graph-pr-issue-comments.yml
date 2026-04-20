@@ -206,14 +206,18 @@ jobs:
               cd "$GITHUB_WORKSPACE"
               SAFE="${dir//\//__}"
 
-              # 生成交互式 HTML（Cytoscape.js，不需要 Graphviz）
-              ./terraform-graph-beautifier \
-                --input "output/${SAFE}.dot" \
-                --output-type=cyto-html \
-                --output "output/${SAFE}.html"
-
-              # 生成 SVG（GitHub Ubuntu runner 自带 dot 命令）
+              # ---- SVG：用原始 DOT，dot 命令能正确处理引号 ----
               dot -Tsvg "output/${SAFE}.dot" > "output/${SAFE}.svg" 2>/dev/null || true
+
+              # ---- HTML：beautifier 不支持引号节点名，需预处理 ----
+              # 去掉 DOT 中的引号（Terraform 资源地址不含空格/特殊字符，去引号安全）
+              sed 's/"//g' "output/${SAFE}.dot" > "output/${SAFE}.clean.dot"
+              ./terraform-graph-beautifier \
+                --input "output/${SAFE}.clean.dot" \
+                --output-type=cyto-html \
+                --output "output/${SAFE}.html" \
+                2>/dev/null || true
+              rm -f "output/${SAFE}.clean.dot"
 
               GRAPH_LIST="${GRAPH_LIST}|${dir}"
               OK=$((OK + 1))
