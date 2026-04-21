@@ -215,11 +215,12 @@ jobs:
               # ---- HTML：beautifier 不支持引号节点名，需预处理 ----
               # 去掉 DOT 中的引号（Terraform 资源地址不含空格/特殊字符，去引号安全）
               sed 's/"//g' "output/${SAFE}.dot" > "output/${SAFE}.clean.dot"
-              ./terraform-graph-beautifier \
+              if ! ./terraform-graph-beautifier \
                 --input "output/${SAFE}.clean.dot" \
                 --output-type=cyto-html \
-                --output "output/${SAFE}.html" \
-                2>/dev/null || true
+                --output "output/${SAFE}.html" 2>&1; then
+                echo "  警告: HTML 生成失败（该模块仅保留 SVG）"
+              fi
               rm -f "output/${SAFE}.clean.dot"
 
               # 每次处理完立刻删掉 Provider 插件包，防磁盘爆满
